@@ -254,7 +254,11 @@ export function formatModelSlug(rawInput, lookup = null) {
   }
 
   // Heuristic slug formatter (e.g. "claude-opus-5-5-high", "gemini-3.8-flash-xhigh", "gpt-oss-120b-medium")
-  let normalized = cleaned.toLowerCase().replace(/^model_/, '').replace(/_/g, '-');
+  let normalized = cleaned
+    .toLowerCase()
+    .replace(/^model_/, '')
+    .replace(/_/g, '-')
+    .replace(/-disabled$/, '');
   // Collapse version numbers like "claude-opus-5-5-high" -> "claude-opus-5.5-high"
   normalized = normalized.replace(/-(opus|sonnet|haiku)-(\d+)-(\d+)(?=-|$)/g, '-$1-$2.$3');
 
@@ -297,8 +301,8 @@ export function formatModelSlug(rawInput, lookup = null) {
 /**
  * Classifies a remaining quota fraction [0, 1] or null into a health status string.
  */
-function quotaStatusOf(hasQuota, remainingFraction) {
-  if (!hasQuota || remainingFraction === null) return 'unlimited';
+function quotaStatusOf(hasQuota, remainingFraction, isDisabled = false) {
+  if (isDisabled || !hasQuota || remainingFraction === null) return 'unavailable';
   if (remainingFraction <= 0) return 'exhausted';
   if (remainingFraction < 0.2) return 'low';
   if (remainingFraction < 0.5) return 'warning';
@@ -361,15 +365,25 @@ export function parseQuotaData(userStatusPayload, nowMs = Date.now()) {
   for (const cfg of rawConfigs) {
     const info = formatModelSlug(cfg.modelId || cfg.label || cfg.modelOrAlias?.model, lookup);
     const q = cfg.quotaInfo || {};
-    const hasQuota = typeof q.remainingFraction === 'number' && Number.isFinite(q.remainingFraction);
+    const isDisabled =
+      Boolean(cfg.disabled) ||
+      /^unavailable$/i.test(String(cfg.tagTitle || '').trim()) ||
+      /-disabled$/i.test(String(cfg.modelId || '').trim());
+    const rawHasQuota =
+      !isDisabled && typeof q.remainingFraction === 'number' && Number.isFinite(q.remainingFraction);
+    const hasQuota = rawHasQuota;
     const remainingFraction = hasQuota ? Math.max(0, Math.min(1, q.remainingFraction)) : null;
     const remainingPercent = hasQuota ? remainingFraction * 100 : null;
     const usedPercent = hasQuota ? (1 - remainingFraction) * 100 : null;
 
-    const resetTime = typeof q.resetTime === 'string' && q.resetTime ? q.resetTime : null;
+    const resetTime = hasQuota && typeof q.resetTime === 'string' && q.resetTime ? q.resetTime : null;
     const resetEpochMs = resetTime ? Date.parse(resetTime) : NaN;
     const resetInMs = Number.isFinite(resetEpochMs) ? Math.max(0, resetEpochMs - nowMs) : null;
-    const status = quotaStatusOf(hasQuota, remainingFraction);
+    const status = quotaStatusOf(hasQuota, remainingFraction, isDisabled);
+    const unavailableReason =
+      !hasQuota || isDisabled
+        ? cfg.tagDescription || (isDisabled ? 'Not available on current plan' : 'Quota unavailable')
+        : null;
 
     const modelEntry = {
       modelId: info.modelId,
@@ -377,6 +391,7 @@ export function parseQuotaData(userStatusPayload, nowMs = Date.now()) {
       familyId: info.familyId,
       familyName: info.familyName,
       thinkingLevel: info.thinkingLevel,
+      disabled: isDisabled,
       hasQuota,
       remainingFraction,
       remainingPercent,
@@ -384,6 +399,7 @@ export function parseQuotaData(userStatusPayload, nowMs = Date.now()) {
       resetTime,
       resetInMs,
       status,
+      unavailableReason,
       tagTitle: cfg.tagTitle || null,
       tagDescription: cfg.tagDescription || null,
     };
@@ -394,6 +410,7 @@ export function parseQuotaData(userStatusPayload, nowMs = Date.now()) {
       fam = {
         familyId: info.familyId,
         familyName: info.familyName,
+        disabled: isDisabled,
         hasQuota,
         remainingFraction,
         remainingPercent,
@@ -401,6 +418,7 @@ export function parseQuotaData(userStatusPayload, nowMs = Date.now()) {
         resetTime,
         resetInMs,
         status,
+        unavailableReason,
         poolId: null,
         sharedWith: [],
         variants: [],
@@ -411,13 +429,16 @@ export function parseQuotaData(userStatusPayload, nowMs = Date.now()) {
       modelId: modelEntry.modelId,
       label: modelEntry.label,
       thinkingLevel: modelEntry.thinkingLevel || 'Default',
+      disabled: modelEntry.disabled,
       remainingFraction: modelEntry.remainingFraction,
       remainingPercent: modelEntry.remainingPercent,
       resetTime: modelEntry.resetTime,
       status: modelEntry.status,
+      unavailableReason: modelEntry.unavailableReason,
     });
-    // Keep lowest remaining fraction if variants differ
+    // Keep lowest remaining fraction if variants differ, or mark enabled if any variant has quota
     if (modelEntry.hasQuota && (!fam.hasQuota || modelEntry.remainingFraction < fam.remainingFraction)) {
+      fam.disabled = false;
       fam.hasQuota = true;
       fam.remainingFraction = modelEntry.remainingFraction;
       fam.remainingPercent = modelEntry.remainingPercent;
@@ -425,6 +446,7 @@ export function parseQuotaData(userStatusPayload, nowMs = Date.now()) {
       fam.resetTime = modelEntry.resetTime;
       fam.resetInMs = modelEntry.resetInMs;
       fam.status = modelEntry.status;
+      fam.unavailableReason = null;
     }
   }
 

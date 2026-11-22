@@ -87,7 +87,7 @@
   }
 
   function fmtPercent(pct) {
-    if (pct === null || pct === undefined || !Number.isFinite(pct)) return 'Unlimited';
+    if (pct === null || pct === undefined || !Number.isFinite(pct)) return 'Unavailable';
     if (pct <= 0) return '0%';
     if (pct >= 99.95 && pct < 100) return '99.9%';
     return `${pct.toFixed(pct % 1 === 0 ? 0 : 1)}%`;
@@ -170,10 +170,10 @@
       $('active-model-reset').textContent = fmtCountdown(q.resetTime);
       $('active-model-reset').title = q.resetTime ? `Resets at ${new Date(q.resetTime).toLocaleString()}` : '';
     } else if (snap.quota?.available) {
-      $('active-model-quota-num').textContent = 'Unlimited';
-      bar.style.width = '100%';
-      bar.className = 'progress-fill unlimited';
-      $('active-model-used').textContent = 'No rate-limit cap reported';
+      $('active-model-quota-num').textContent = 'Unavailable';
+      bar.style.width = '0%';
+      bar.className = 'progress-fill unavailable';
+      $('active-model-used').textContent = q?.unavailableReason || 'Not available on current plan';
       $('active-model-reset').textContent = '';
     } else {
       $('active-model-quota-num').textContent = 'Quota offline';
@@ -340,22 +340,32 @@
       listEl.innerHTML = models
         .map((m) => {
           const isActive = m.modelId === activeModelId;
-          const remPct = m.hasQuota ? Math.max(0, Math.min(100, m.remainingPercent ?? 0)) : 100;
+          const isLocked = Boolean(m.disabled || !m.hasQuota || /-disabled$/i.test(m.modelId || ''));
+          const statusClass = m.hasQuota ? m.status : 'unavailable';
+          const remPct = m.hasQuota ? Math.max(0, Math.min(100, m.remainingPercent ?? 0)) : 0;
+          const rightReset = m.hasQuota ? fmtCountdown(m.resetTime) : '';
+          const reason = m.unavailableReason || m.tagDescription || 'Not available on current plan';
           return `
-            <div class="quota-row" role="listitem">
+            <div class="quota-row ${m.hasQuota ? '' : 'unavailable'}" role="listitem">
               <div class="quota-row-top">
                 <div class="quota-name-wrap">
                   <span class="quota-name">${esc(m.label)}</span>
                   ${isActive ? '<span class="quota-active-tag">ACTIVE</span>' : ''}
+                  ${isLocked ? '<span class="quota-unavail-tag">Locked</span>' : ''}
                 </div>
                 <div class="quota-right">
-                  <span class="quota-pct">${m.hasQuota ? `${fmtPercent(remPct)} left` : 'Unlimited'}</span>
-                  <span class="quota-reset" title="${esc(m.resetTime || '')}">${esc(fmtCountdown(m.resetTime))}</span>
+                  <span class="quota-pct">${m.hasQuota ? `${fmtPercent(remPct)} left` : 'Unavailable'}</span>
+                  ${rightReset ? `<span class="quota-reset" title="${esc(m.resetTime || '')}">${esc(rightReset)}</span>` : ''}
                 </div>
               </div>
               <div class="progress-track">
-                <div class="progress-fill ${esc(m.status)}" style="width: ${remPct}%"></div>
+                <div class="progress-fill ${esc(statusClass)}" style="width: ${remPct}%"></div>
               </div>
+              ${
+                !m.hasQuota
+                  ? `<div class="quota-sub"><span>${esc(reason)}</span></div>`
+                  : ''
+              }
             </div>`;
         })
         .join('');
@@ -364,48 +374,56 @@
 
     let families = Array.isArray(quota.families) ? quota.families : [];
     if (state.minimal) {
-      // In Minimal Mode, prioritize active family + families with used quota (< 100% remaining)
-      const nonFull = families.filter(
-        (f) => f.familyId === activeFamilyId || (f.hasQuota && f.remainingFraction < 0.999)
+      // In Minimal Mode, hide unavailable models and prioritize active family + families with used quota (< 100% remaining)
+      const availableFams = families.filter((f) => f.hasQuota);
+      const nonFull = availableFams.filter(
+        (f) => f.familyId === activeFamilyId || f.remainingFraction < 0.999
       );
-      families = nonFull.length > 0 ? nonFull : families.slice(0, 3);
+      families = nonFull.length > 0 ? nonFull : availableFams.slice(0, 3);
     }
 
     listEl.innerHTML = families
       .map((fam) => {
         const isActive = fam.familyId === activeFamilyId;
-        const remPct = fam.hasQuota ? Math.max(0, Math.min(100, fam.remainingPercent ?? 0)) : 100;
+        const isLocked = Boolean(
+          fam.disabled || !fam.hasQuota || /-disabled$/i.test(fam.variants?.[0]?.modelId || '')
+        );
+        const statusClass = fam.hasQuota ? fam.status : 'unavailable';
+        const remPct = fam.hasQuota ? Math.max(0, Math.min(100, fam.remainingPercent ?? 0)) : 0;
         const usedPct = fam.hasQuota ? Math.max(0, Math.min(100, fam.usedPercent ?? 0)) : 0;
+        const rightReset = fam.hasQuota ? fmtCountdown(fam.resetTime) : '';
+        const reason = fam.unavailableReason || fam.tagDescription || 'Not available on current plan';
         const sharedHint =
-          !state.minimal && Array.isArray(fam.sharedWith) && fam.sharedWith.length > 0
+          !state.minimal && fam.hasQuota && Array.isArray(fam.sharedWith) && fam.sharedWith.length > 0
             ? `Shares quota pool with ${fam.sharedWith.join(', ')}`
             : '';
         const variantsHtml =
-          !state.minimal && Array.isArray(fam.variants) && fam.variants.length > 1
+          !state.minimal && fam.hasQuota && Array.isArray(fam.variants) && fam.variants.length > 1
             ? `<div class="variant-pills">${fam.variants
                 .map((v) => `<span class="variant-pill">${esc(v.thinkingLevel)}</span>`)
                 .join('')}</div>`
             : '';
 
         return `
-          <div class="quota-row" role="listitem">
+          <div class="quota-row ${fam.hasQuota ? '' : 'unavailable'}" role="listitem">
             <div class="quota-row-top">
               <div class="quota-name-wrap">
                 <span class="quota-name">${esc(fam.familyName)}</span>
                 ${isActive ? '<span class="quota-active-tag">ACTIVE</span>' : ''}
+                ${isLocked ? '<span class="quota-unavail-tag">Locked</span>' : ''}
               </div>
               <div class="quota-right">
-                <span class="quota-pct">${fam.hasQuota ? `${fmtPercent(remPct)} left` : 'Unlimited'}</span>
-                <span class="quota-reset" title="${esc(fam.resetTime || '')}">${esc(fmtCountdown(fam.resetTime))}</span>
+                <span class="quota-pct">${fam.hasQuota ? `${fmtPercent(remPct)} left` : 'Unavailable'}</span>
+                ${rightReset ? `<span class="quota-reset" title="${esc(fam.resetTime || '')}">${esc(rightReset)}</span>` : ''}
               </div>
             </div>
             <div class="progress-track">
-              <div class="progress-fill ${esc(fam.status)}" style="width: ${remPct}%"></div>
+              <div class="progress-fill ${esc(statusClass)}" style="width: ${remPct}%"></div>
             </div>
             ${
               !state.minimal
                 ? `<div class="quota-sub">
-                    <span>${fam.hasQuota ? `${fmtPercent(usedPct)} used` : 'No quota limit'}</span>
+                    <span>${fam.hasQuota ? `${fmtPercent(usedPct)} used` : esc(reason)}</span>
                     <span>${esc(sharedHint)}</span>
                   </div>`
                 : ''

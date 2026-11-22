@@ -108,7 +108,10 @@ const SAMPLE_USER_STATUS = {
         },
         {
           label: 'Gemini 4 Carbon',
-          modelId: 'gemini-4-carbon',
+          modelId: 'gemini-4-carbon-disabled',
+          disabled: true,
+          tagTitle: 'Unavailable',
+          tagDescription: 'Gemini 4 Carbon is currently available to Ultra plan subscribers.',
           modelOrAlias: { model: 'MODEL_PLACEHOLDER_M670' },
           quotaInfo: {},
         },
@@ -173,13 +176,18 @@ test('parseQuotaData handles normal fractions, 0 exhausted fraction, empty quota
   assert.equal(claudeFam.status, 'exhausted');
   assert.equal(claudeFam.resetInMs, 3600 * 1000);
 
-  // Check empty quotaInfo ({}) is treated as unlimited / N/A
+  // Check disabled / empty quotaInfo ({}) is treated as unavailable on current plan, NEVER unlimited
   const carbonFam = quota.families.find((f) => f.familyName === 'Gemini 4 Carbon');
   assert.ok(carbonFam);
   assert.equal(carbonFam.hasQuota, false);
+  assert.equal(carbonFam.disabled, true);
   assert.equal(carbonFam.remainingFraction, null);
   assert.equal(carbonFam.remainingPercent, null);
-  assert.equal(carbonFam.status, 'unlimited');
+  assert.equal(carbonFam.status, 'unavailable');
+  assert.equal(
+    carbonFam.unavailableReason,
+    'Gemini 4 Carbon is currently available to Ultra plan subscribers.'
+  );
 });
 
 test('parseTranscriptText handles PLANNER_RESPONSE tokens, torn lines, version-dotted settings changes, and subagents', () => {

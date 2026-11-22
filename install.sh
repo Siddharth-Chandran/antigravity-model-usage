@@ -14,13 +14,15 @@ if [[ "${MODE}" == "--symlink" ]]; then
   ln -s "${SRC_DIR}" "${TARGET_DIR}"
   echo "Installed ${PLUGIN_NAME} (symlinked) -> ${TARGET_DIR}"
 else
-  rm -rf "${TARGET_DIR}"
+  if [[ -L "${TARGET_DIR}" ]]; then
+    rm -f "${TARGET_DIR}"
+  fi
   mkdir -p "${TARGET_DIR}"
-  cp -R "${SRC_DIR}/plugin.json" \
-        "${SRC_DIR}/README.md" \
-        "${SRC_DIR}/assets" \
-        "${SRC_DIR}/skills" \
-        "${SRC_DIR}/sidecars" \
-        "${TARGET_DIR}/"
+  cp -Rf "${SRC_DIR}/plugin.json" \
+         "${SRC_DIR}/README.md" \
+         "${SRC_DIR}/assets" \
+         "${SRC_DIR}/skills" \
+         "${SRC_DIR}/sidecars" \
+         "${TARGET_DIR}/"
   echo "Installed ${PLUGIN_NAME} to ${TARGET_DIR}"
 fi

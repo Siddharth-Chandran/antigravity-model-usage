@@ -381,8 +381,21 @@ body.minimal-mode .minimal-only {
   background: var(--danger);
 }
 
-.progress-fill.unlimited {
-  background: var(--unlimited);
+.progress-fill.unavailable {
+  background: transparent;
+}
+
+.quota-row.unavailable {
+  opacity: 0.65;
+}
+
+.quota-unavail-tag {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--muted-fg);
 }
 
 /* Stats Grid */
