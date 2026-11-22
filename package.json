@@ -1,0 +1,11 @@
+{
+  "name": "antigravity-model-usage",
+  "version": "1.0.0",
+  "description": "Real-time 5-second Model Usage & Quota Monitor UI Plugin for Google Antigravity",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "ANTIGRAVITY_SIDECAR_WEB_PORT=${ANTIGRAVITY_SIDECAR_WEB_PORT:-4150} node sidecars/usage_monitor/main.mjs"
+  },
+  "license": "MIT"
+}

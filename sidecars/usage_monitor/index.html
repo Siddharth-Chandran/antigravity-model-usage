@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="frame-src 'none'; child-src 'none'; object-src 'none'">
+  <title>Model Usage</title>
+  <script src="/preload.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="header">
+      <div class="header-top">
+        <div class="title-group">
+          <h1 class="app-title">Model Usage</h1>
+          <span id="live-pill" class="live-pill" role="status" data-testid="usage-live-pill" title="Polls local sidecar every 5 seconds (0 model tokens used)">
+            <span id="live-dot" class="live-dot" aria-hidden="true"></span>
+            <span id="live-text">Live · 5s</span>
+          </span>
+        </div>
+        <div class="toolbar-actions">
+          <button
+            id="mode-toggle"
+            type="button"
+            class="btn-pill"
+            aria-pressed="false"
+            data-testid="usage-mode-toggle"
+            title="Toggle between Minimal summary view and Full dashboard view"
+          >
+            Minimal
+          </button>
+          <button
+            id="pause-toggle"
+            type="button"
+            class="btn-icon"
+            aria-pressed="false"
+            data-testid="usage-pause-toggle"
+            title="Pause or resume 5-second auto-refresh"
+            aria-label="Pause 5-second auto-refresh"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path id="pause-icon-path" d="M5 3.5h2v9H5zm4 0h2v9H9z" fill="currentColor"/>
+            </svg>
+          </button>
+          <button
+            id="refresh-btn"
+            type="button"
+            class="btn-icon"
+            data-testid="usage-refresh-btn"
+            title="Refresh immediately"
+            aria-label="Refresh immediately"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L13.5 2.5V6.5H9.5l1.3-1.3A4 4 0 1 0 12 8h1.5z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="header-sub">
+        <span id="last-updated" class="meta-text">Connecting to local sidecar…</span>
+        <span class="zero-token-badge" title="Reads local disk and Language Server status directly — uses zero LLM tokens">0 tokens used</span>
+      </div>
+    </header>
+
+    <div id="error-banner" class="alert-banner hidden" role="alert" data-testid="usage-error-banner"></div>
+
+    <main class="content">
+      <!-- 1. Active Model & Quota Spotlight Card (Visible in both Full & Minimal modes) -->
+      <section id="active-model-card" class="card spotlight-card" data-testid="usage-active-model-card" aria-label="Active Model Status">
+        <div class="card-header">
+          <span class="section-kicker">ACTIVE MODEL</span>
+          <span id="conv-activity-badge" class="status-badge idle">Idle</span>
+        </div>
+        <div class="spotlight-main">
+          <div class="spotlight-model-name" id="active-model-name">Loading…</div>
+          <div class="spotlight-quota-num" id="active-model-quota-num">—</div>
+        </div>
+        <div class="progress-track lg" aria-hidden="true">
+          <div id="active-model-bar" class="progress-fill healthy" style="width: 100%"></div>
+        </div>
+        <div class="spotlight-footer">
+          <span id="active-model-used" class="meta-text">—</span>
+          <span id="active-model-reset" class="meta-text mono">—</span>
+        </div>
+      </section>
+
+      <!-- 2. Current Conversation & Subagent Token Usage (Compact in Minimal Mode, Detailed in Full Mode) -->
+      <section id="conversation-section" class="card" data-testid="usage-conversation-section" aria-label="Conversation Token Usage">
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <h2 class="card-title">Conversation Tokens</h2>
+            <span id="conv-steps-badge" class="pill-count">0 steps</span>
+          </div>
+          <div class="full-only conv-picker-wrap">
+            <select id="conv-select" class="select-sm" aria-label="Select conversation" title="Switch inspected conversation">
+              <option value="">Current conversation</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="conv-empty-notice" class="empty-inline hidden">
+          No model turns recorded in this conversation yet. Token metrics will appear automatically after the first response.
+        </div>
+
+        <div class="stats-grid" id="conv-stats-grid">
+          <div class="stat-box">
+            <span class="stat-label">Total Tokens</span>
+            <span class="stat-value mono" id="tok-total">0</span>
+            <span class="stat-sub" id="tok-billable">0 uncached</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Input</span>
+            <span class="stat-value mono" id="tok-input">0</span>
+            <span class="stat-sub" id="tok-turns">0 turns</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Output</span>
+            <span class="stat-value mono" id="tok-output">0</span>
+            <span class="stat-sub" id="tok-subagents-count">0 subagents</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Cache Read</span>
+            <span class="stat-value mono" id="tok-cache">0</span>
+            <span class="stat-sub accent" id="tok-cache-rate">0% hit rate</span>
+          </div>
+        </div>
+
+        <div id="minimal-conv-summary" class="minimal-only meta-row">
+          <span id="min-conv-meta">0 steps · 0 subagents</span>
+        </div>
+
+        <!-- Full Mode Only: Per-Model Table, Subagents Table, Recent Turns -->
+        <div class="full-only">
+          <div id="by-model-wrap" class="subsection hidden">
+            <h3 class="subsection-title">By Model Used in Conversation</h3>
+            <div class="table-wrap">
+              <table class="data-table" aria-label="Token usage by model">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th class="num">Steps</th>
+                    <th class="num">Input</th>
+                    <th class="num">Output</th>
+                    <th class="num">Cache</th>
+                    <th class="num">Total</th>
+                  </tr>
+                </thead>
+                <tbody id="by-model-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="subagents-wrap" class="subsection hidden">
+            <h3 class="subsection-title">Subagents &amp; Swarm Workers</h3>
+            <div class="table-wrap">
+              <table class="data-table" aria-label="Subagent token usage">
+                <thead>
+                  <tr>
+                    <th>Role / Agent</th>
+                    <th>Model</th>
+                    <th class="num">Steps</th>
+                    <th class="num">Total</th>
+                  </tr>
+                </thead>
+                <tbody id="subagents-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <details id="recent-steps-details" class="subsection details-block hidden">
+            <summary class="details-summary">
+              <span>Recent Turns Timeline</span>
+              <span id="recent-steps-count" class="meta-text"></span>
+            </summary>
+            <div class="table-wrap">
+              <table class="data-table" aria-label="Recent turns token timeline">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Model</th>
+                    <th class="num">In</th>
+                    <th class="num">Out</th>
+                    <th class="num">Cache</th>
+                    <th>Tools</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-steps-tbody"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- 3. Account Model Quotas & Reset Timers -->
+      <section id="quota-section" class="card" data-testid="usage-quota-section" aria-label="Account Model Quotas">
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <h2 class="card-title">Account Model Quotas</h2>
+            <span id="tier-badge" class="pill-count">Pro</span>
+          </div>
+          <button
+            id="variants-toggle"
+            type="button"
+            class="btn-link full-only"
+            aria-pressed="false"
+            data-testid="usage-variants-toggle"
+          >
+            Show all variants
+          </button>
+        </div>
+
+        <div id="plan-credits-bar" class="credits-strip full-only hidden">
+          <div class="credit-item">
+            <span class="credit-label">Prompt Credits:</span>
+            <span id="credits-prompt" class="credit-val mono">—</span>
+          </div>
+          <div class="credit-item">
+            <span class="credit-label">Flow Credits:</span>
+            <span id="credits-flow" class="credit-val mono">—</span>
+          </div>
+        </div>
+
+        <div id="quota-list" class="quota-list" role="list"></div>
+      </section>
+
+      <!-- 4. All Local Conversations Rollup (Full Mode Only) -->
+      <section id="rollup-section" class="card full-only" data-testid="usage-rollup-section" aria-label="Recent Local Workspace Usage">
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <h2 class="card-title">Local Conversations Rollup</h2>
+            <span id="rollup-conv-count" class="pill-count">0 convs</span>
+          </div>
+        </div>
+        <div class="stats-grid compact">
+          <div class="stat-box">
+            <span class="stat-label">Total Local Tokens</span>
+            <span class="stat-value mono" id="rollup-total">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Input / Output</span>
+            <span class="stat-value mono" id="rollup-inout">0 / 0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Cached Context</span>
+            <span class="stat-value mono" id="rollup-cache">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Total Steps</span>
+            <span class="stat-value mono" id="rollup-steps">0</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

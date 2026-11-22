@@ -1,0 +1,12 @@
+{
+  "name": "model-usage",
+  "displayName": "Model Usage",
+  "version": "1.0.0",
+  "description": "Real-time 5-second monitor for account model quotas, reset timers, and conversation & subagent token usage in the auxiliary side pane.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Open the Model Usage panel to monitor live quota and token usage",
+    "Show my remaining model quotas and reset timers",
+    "Summarize token usage for this conversation and its subagents"
+  ]
+}
